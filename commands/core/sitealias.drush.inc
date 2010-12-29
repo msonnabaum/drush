@@ -37,6 +37,7 @@ function sitealias_drush_command() {
       'drush site-alias' => 'List all alias records known to drush.',
       'drush site-alias @dev' => 'Print an alias record for the alias \'dev\'.',
     ),
+    'topics' => array('docs-aliases'),
   );
   return $items;
 }
@@ -120,7 +121,10 @@ function _drush_sitealias_user_specified_list() {
  * specified.
  */
 function drush_sitealias_print() {
-  drush_bootstrap_max();
+  // Call bootstrap max, unless the caller requested short output
+  if (!drush_get_option('short', FALSE)) {
+    drush_bootstrap_max();
+  }
   
   $site_list = _drush_sitealias_user_specified_list();
   $full_output = drush_get_option('full');

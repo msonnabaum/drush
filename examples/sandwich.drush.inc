@@ -8,7 +8,7 @@
  *   To run this *fun* command, execute `sudo drush --include=./examples mmas`
  *   from within your drush directory.
  *
- *   Shows how to make your own drush command.
+ *   See `drush topic docs-commands` for more information about command authoring. 
  *
  *   You can copy this file to any of the following
  *     1. A .drush folder in your HOME folder.
@@ -42,7 +42,7 @@ function sandwich_drush_command() {
       'filling' => 'The type of the sandwich (turkey, cheese, etc.)',
     ),
     'options' => array(
-      'spreads' => 'Comma delimited list of spreads (e.g. mayonnaise, mustard)',
+      '--spreads' => 'Comma delimited list of spreads (e.g. mayonnaise, mustard)',
     ),
     'examples' => array(
       'drush mmas turkey --spreads=ketchup,mustard' => 'Make a terrible-tasting sandwich that is lacking in pickles.',

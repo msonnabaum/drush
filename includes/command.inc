@@ -130,10 +130,10 @@ function drush_invoke($command) {
   }
   elseif (drush_get_option('show-invoke')) {
     // We show all available hooks up to and including the one that failed (or all, if there were no failures)
-    drush_log(dt("Available drush_invoke() hooks for !command: !available", array('!command' => $command, '!available' => "\n" . implode("\n", $all_available_hooks))), 'internals');
+    drush_log(dt("Available drush_invoke() hooks for !command: !available", array('!command' => $command, '!available' => "\n" . implode("\n", $all_available_hooks))), 'ok');
   }
   if (drush_get_option('show-invoke')) {
-    drush_log(dt("Available rollback hooks for !command: !rollback", array('!command' => $command, '!rollback' => "\n" . implode("\n", $available_rollbacks))), 'internals');
+    drush_log(dt("Available rollback hooks for !command: !rollback", array('!command' => $command, '!rollback' => "\n" . implode("\n", $available_rollbacks))), 'ok');
   }
 
   // something went wrong, we need to undo
@@ -166,8 +166,8 @@ function drush_invoke($command) {
  *
  * @see drush_topic_docs_topic().
  */
-function drush_dispatch($command = NULL, $arguments = array()) {
-  $command = ($command) ? $command : drush_get_command();
+function drush_dispatch($command, $arguments = array()) {
+  drush_set_command($command);
   $return = FALSE;
 
   if ($command) {
@@ -242,12 +242,12 @@ function drush_invoke_process_args($command_name, $commandline_args, $commandlin
  *   If the command could not be completed successfully, FALSE.
  *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
  */
-function drush_invoke_sitealais($site_alias_record, $command_name) {
+function drush_invoke_sitealias($site_alias_record, $command_name) {
   $args = func_get_args();
   array_shift($args);
   array_shift($args);
   
-  return drush_invoke_sitealais_args($site_alias_record, $command_name, $args);
+  return drush_invoke_sitealias_args($site_alias_record, $command_name, $args);
 }
 
 /**
@@ -266,7 +266,7 @@ function drush_invoke_sitealais($site_alias_record, $command_name) {
  *   If the command could not be completed successfully, FALSE.
  *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
  */
-function drush_invoke_sitealais_args($site_alias_record, $command_name, $commandline_args, $commandline_options = array()) {
+function drush_invoke_sitealias_args($site_alias_record, $command_name, $commandline_args, $commandline_options = array()) {
   return drush_do_site_command($site_alias_record, $command_name, $commandline_args, $commandline_options);
 }
 
@@ -811,14 +811,9 @@ function drush_commandfile_list() {
 }
 
 function _drush_find_commandfiles($phase, $phase_max = FALSE) {
-  $cache =& drush_get_context('DRUSH_COMMAND_FILES', array());
-
   if (!$phase_max) {
     $phase_max = $phase;
   }
-
-  static $evaluated = array();
-  static $deferred = array();
 
   $searchpath = array();
   switch ($phase) {
@@ -871,6 +866,15 @@ function _drush_find_commandfiles($phase, $phase_max = FALSE) {
       }
       break;
   }
+  
+  _drush_add_commandfiles($searchpath, $phase);
+}
+
+function _drush_add_commandfiles($searchpath, $phase = NULL) {
+  $cache =& drush_get_context('DRUSH_COMMAND_FILES', array());
+
+  static $evaluated = array();
+  static $deferred = array();
 
   if (sizeof($searchpath)) {
     // Build a list of all of the modules to attempt to load.
@@ -939,6 +943,15 @@ function _drush_find_commandfiles($phase, $phase_max = FALSE) {
  * are present in each of the commandfile directories.
  */
 function drush_command_include($command) {
+  $include_files = drush_command_get_includes($command);
+  foreach($include_files as $filename => $commandfile) {
+    drush_log(dt('Including !filename', array('!filename' => $filename)), 'bootstrap');
+    include_once($filename);
+  }
+}
+
+function drush_command_get_includes($command) {
+  $include_files = array();
   $parts = explode('-', $command);
   $command = implode(".", array_reverse($parts));
 
@@ -947,10 +960,10 @@ function drush_command_include($command) {
   foreach ($commandfiles as $commandfile => $file) {
     $filename = sprintf("%s/%s.inc", dirname($file), $command);
     if (file_exists($filename)) {
-      drush_log(dt('Including !filename', array('!filename' => $filename)), 'bootstrap');
-      include_once($filename);
+      $include_files[$filename] = $commandfile;
     }
   }
+  return $include_files;
 }
 
 /**

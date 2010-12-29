@@ -94,6 +94,7 @@ function core_drush_command() {
     'bootstrap' => DRUSH_BOOTSTRAP_MAX,
     'aliases' => array('scr'),
     'deprecated-aliases' => array('script'),
+    'topics' => array('docs-examplescript', 'docs-scripts'),
   );
   $items['cache-clear'] = array(
     'description' => 'Clear a specific cache, or all drupal caches.',
@@ -144,6 +145,7 @@ function core_drush_command() {
     ),
     'aliases' => array('rsync'),
     'deprecated-aliases' => array('sync'),
+    'topics' => array('docs-aliases'),
   );
   $items['site-install'] = array(
     'description' => 'Install Drupal along with modules/themes/configuration using the specified install profile.',
@@ -160,7 +162,7 @@ function core_drush_command() {
       'clean-url'=> 'Defaults to 1',
       'site-name' => 'Defaults to Site-Install',
       'site-mail' => 'From: for system mailings. Defaults to admin@example.com',
-      'sites-subdir' => "Name of directory under 'sites' which should be created if needed. Defaults to 'default'",
+      'sites-subdir' => "Name of directory under 'sites' which should be created. Only needed when the subdirectory does not already exist. Defaults to 'default'",
     ),
     'examples' => array(
       'drush site-install expert --locale=uk' => '(Re)install using the expert install profile. Set default language to Ukranian.',
@@ -179,6 +181,10 @@ function core_drush_command() {
     'arguments' => array(
       'target' => 'A module/theme name, or special names like root, files, private, or an alias : path alias string such as @alias:%files. Defaults to root.',
     ),
+    'options' => array(
+      'component' => "The portion of the evaluated path to return.  Defaults to 'path'; 'name' returns the site alias of the target.",
+      'local' => "Reject any target that specifies a remote site.",
+    ),
     'examples' => array(
       'cd `drush dd devel`' => 'Navigate into the devel module directory',
       'cd `drush dd` ' => 'Navigate to the root of your Drupal site',
@@ -192,12 +198,17 @@ function core_drush_command() {
 
   $items['core-cli'] = array(
     'description' => dt('Enter a new shell optimized for drush use.'),
+    'options' => array(
+      'override' => 'List of drush commands or aliases that should override built-in shell functions and commands; otherwise, built-ins override drush commands. Default is help,dd,sa',
+      'pipe' => 'Print the generated .bashrc file and exit.',
+    ),
     'examples' => array(
       'help' => 'Print available drush commands',
-      'cdd' => 'Navigate to the root of your Drupal site',
-      'cdd files' => 'Navigate to the files directory.',
+      'cd @alias' => 'Navigate to the root of the site indicated by @alias; subsequent commands will target that site.',
+      'cd %files' => 'Navigate to the files directory.',
       'lsd files' => 'List all files in the Drupal files directory.',
-      'on @alias status' => 'Run the command "status" on the site indicated by @alias',
+      'on @alias core-status' => 'Run the command "core-status" on the site indicated by @alias',
+      'use @alias' => 'Run subsequent commands on the site indicated by @alias',
     ),
     'aliases' => array('cli'),
     'bootstrap' => DRUSH_BOOTSTRAP_MAX,
@@ -220,7 +231,12 @@ function core_drush_command() {
     ),
     'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_SITE,
   );
-
+  $items['core-global-options'] = array(
+    'description' => dt('All global options'),
+    'hidden' => TRUE,
+    'topic' => TRUE,
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUSH,
+  );
   return $items;
 }
 
@@ -238,154 +254,23 @@ function core_drush_engine_drupal() {
  */
 function drush_core_updatedb() {
   if (drush_get_context('DRUSH_SIMULATE')) {
-    return drush_set_error(dt('updatedb command does not support --simulate option.'));
+    return drush_set_error('DRUSH_SIMULATE_UNSUPPORTED', dt('updatedb command does not support --simulate option.'));
   }
 
   drush_include_engine('drupal', 'update', drush_drupal_major_version());
   update_main();
 
-  // Clear all caches. We just performed major surgery.
-  drush_drupal_cache_clear_all();
-
-  drush_log(dt('Finished performing updates.'), 'ok');
-}
-
-/**
- * This is called for help command, or no command.
- */
-function drush_core_help() {
-  $commands = func_get_args();
-
-
-  if (empty($commands)) {
-    // Build a fake command for the purposes of showing examples and options.
-    $fake = array(
-      'description' => 'Execute a drush command. Run `drush help [command]` to view command-specific help.  Run `drush topic` to read even more documentation.',
-      'options' => drush_get_global_options(),
-      'examples' => array(
-        'drush dl cck zen' => 'Download CCK module and Zen theme.',
-        'drush --uri=http://example.com status' => 'Show status command for the example.com multi-site.',
-      ),
-    );
-    $fake += drush_command_defaults('fake', 'fake', __FILE__);
-    if (!drush_get_option('html')) {
-      drush_print_help($fake);
-    }
-
-    if (!drush_get_option('html')) {
-      drush_print(dt('Commands: '));
-    }
-
-    $phases = _drush_bootstrap_phases();
-    // For speed, only bootstrap up to DRUSH_BOOTSTRAP_DRUPAL_SITE+1.
-    $phases = array_slice($phases, 0, DRUSH_BOOTSTRAP_DRUPAL_SITE+1);
-
-    $printed_rows = $all_rows = array();
-    $phase_index = DRUSH_BOOTSTRAP_DRUSH;
-
-    foreach ($phases as $phase_index) {
-      if (drush_bootstrap_validate($phase_index)) {
-        if ($phase_index > drush_get_context('DRUSH_BOOTSTRAP_PHASE')) {
-          drush_bootstrap($phase_index);
-        }
-
-        $commands = drush_get_commands();
-        // Filter by command file if specified.
-        if ($commandfile = drush_get_option('filter')) {
-          foreach ($commands as $key => $candidate) {
-            if ($candidate['commandfile'] != $commandfile) {
-              unset($commands[$key]);
-            }
-          }
-        }
-
-        $rows = array();
-        ksort($commands);
-        foreach($commands as $key => $command) {
-          if (!$command['hidden']) {
-            if (!array_key_exists('is_alias', $command) || !$command['is_alias']) {
-              if (!array_key_exists($key, $printed_rows)) {
-                $name = $command['aliases'] ? $key . ' (' . implode(', ', $command['aliases']) . ')': $key;
-                $rows[$key] = array($name, $command['description']);
-                $all_rows[$key] = array($name, $command['description']);
-                $pipe[] = "\"$key\"";
-              }
-            }
-          }
-        }
-
-        // These two options require delayed printing.
-        if (!drush_get_option('sort') && !drush_get_option('html')) {
-          drush_print_table($rows, FALSE, array(0 => 20));
-        }
-        $printed_rows = array_merge($printed_rows, $rows);
-      }
-      else {
-        break;
-      }
-    }
-
-    // We delayed printing until now.
-    ksort($all_rows);
-    if (drush_get_option('sort')) {
-      drush_print_table($all_rows, FALSE, array(0 => 20));
-    }
-    elseif (drush_get_option('html')) {
-      return drush_print(drush_help_html($commands));
-    }
-
-    // Newline-delimited list for use by other scripts. Set the --pipe option.
-    if (drush_get_option('pipe') && isset($pipe)) {
-      drush_print_pipe($pipe);
-    }
-    return;
+  if (drush_drupal_major_version() <= 6) {
+    // Clear all caches. We just performed major surgery.
+    drush_drupal_cache_clear_all();
   }
   else {
-    $result = TRUE;
-    while ((count($commands) > 0) && !drush_get_error()) {
-      $result =  drush_show_help(array_shift($commands));
-    }
-    return $result;
+    // Should be unnecessary on D7.
+    // On D7 site-upgrade, this cache_clear was leading to:
+    // Call to undefined function field_read_fields() in field_sql_storage.install line 17
   }
 
-  drush_set_error('DRUSH_COMMAND_NOT_FOUND', dt('Invalid command !command.', array('!command' => implode(" ", $commands))));
-}
-
-
-/**
- * Return an HTML page documenting all available commands and global options.
- */
-function drush_help_html($commands) {
-  $output =  "<html><head><title>drush help</title><style>dt {font-size: 110%; font-weight: bold}</style></head><body>\n";
-
-  // Command table
-  $output .=  "<h3>Command list</h3>\n<table>\n";
-  foreach ($commands as $key => $command) {
-    $output .=  "  <tr><td><a href=\"#$key\">$key</a></td><td>" . $command['description'] . "</td></tr>\n";
-  }
-  $output .=  "</table>\n";
-
-  // Global options
-  $options = drush_get_global_options();
-  $output .=  '<h3>Global Options</h3><table>';
-  foreach ($options as $key => $value) {
-    $output .=  "<tr><td>$key</td><td>" . $value . "</td></tr>\n";
-  }
-  $output .=  "</table>\n";
-
-  // Command details
-  $output .=  '<h3>Command detail</h3><dl>';
-  foreach ($commands as $key => $command) {
-    $output .=  "\n<a name=\"$key\"></a><dt>$key</dt><dd><pre>\n";
-    ob_start();
-    drush_show_help($key);
-    $output .= ob_get_clean();
-    $output .=  "</pre></dd>\n";
-  }
-
-  $output .=  "</body></html>\n";
-
-  return $output;
+  drush_log(dt('Finished performing updates.'), 'ok');
 }
 
 /**
@@ -488,9 +373,9 @@ function _core_path_aliases($project = '') {
         $paths['%themes'] = 'sites/all/themes';
       }
       if (drush_drupal_major_version() >= 7) {
-        if (drush_get_context('DRUSH_BOOTSTRAP_PHASE') >= DRUSH_BOOTSTRAP_DRUPAL_FULL) {
-          $paths['%files'] = DrupalPublicStreamWrapper::getDirectoryPath();
-          $paths['%private'] = DrupalPrivateStreamWrapper::getDirectoryPath();
+        if (drush_get_context('DRUSH_BOOTSTRAP_PHASE') >= DRUSH_BOOTSTRAP_DRUPAL_SITE) {
+          $paths['%files'] = variable_get('file_public_path', conf_path() . '/files');
+          $paths['%private'] = variable_get('file_private_path', conf_path() . '/files');
         }
       }
       elseif (function_exists('file_directory_path')) {
@@ -601,7 +486,7 @@ function drush_core_cron() {
     drush_log(dt('Cron run successfully.'), 'success');
   }
   else {
-    drush_set_error('DRUSH_CRON_FAILED', dt('Cron run failed.'));
+    return drush_set_error('DRUSH_CRON_FAILED', dt('Cron run failed.'));
   }
 }
 
@@ -639,6 +524,13 @@ function drush_core_status() {
     drush_print_table(drush_key_value_to_array_table($status_table));
   }
   return;
+}
+
+// Command callback. Show all global options. Exposed via topic command. 
+function drush_core_global_options() {
+  drush_print(dt('These options are applicable to most drush commands.'));
+  drush_print();
+  drush_print_table(drush_key_value_to_array_table(drush_get_global_options()));
 }
 
 function _drush_core_is_named_in_array($key, $the_array) {
@@ -708,7 +600,7 @@ function drush_core_php_script() {
         $all[] = $script_filename;
       }
       if (!$found) {
-        return drush_set_error('Script not found.', dt('Unable to find any of the following: @files', array('@files' => implode(', ', $all))));
+        return drush_set_error('DRUSH_TARGET_NOT_FOUND', dt('Unable to find any of the following: @files', array('@files' => implode(', ', $all))));
       }
     }
   }
@@ -791,7 +683,22 @@ function drush_core_updatedb_batch_process($id) {
   _update_batch_command($id);
 }
 
-function _drush_core_directory($target = 'root') {
+/**
+ * Given a target (e.g. @site:%modules), return the evaluated
+ * directory path
+ *
+ * @param $target
+ *   The target to evaluate.  Can be @site or /path or @site:path
+ *   or @site:%pathalais, etc. (just like rsync parameters)
+ * @param $component
+ *   The portion of the evaluated path to return.  Possible values:
+ *   'path' - the full path to the target (default)
+ *   'name' - the name of the site from the path (e.g. @site1)
+ *   'user-path' - the part after the ':' (e.g. %modules)
+ *   'root' & 'uri' - the Drupal root and URI of the site from the path
+ *   'path-component' - The ':' and the path
+ */
+function _drush_core_directory($target = 'root', $component = 'path', $local_only = FALSE) {
   // Normalize to a sitealias in the target.
   $normalized_target = $target;
   if (strpos($target, ':') === FALSE) {
@@ -812,17 +719,16 @@ function _drush_core_directory($target = 'root') {
   }
 
   $additional_options = array();
-  $values = drush_sitealias_evaluate_path($normalized_target, $additional_options);
-
-  if (isset($values['path'])) {
+  $values = drush_sitealias_evaluate_path($normalized_target, $additional_options, $local_only);
+  if (isset($values[$component])) {
     // Hurray, we found the destination
-    return $values['path'];
+    return $values[$component];
   }
   return NULL;
 }
 
 function drush_core_drupal_directory($target = 'root') {
-  $path = _drush_core_directory($target);
+  $path = _drush_core_directory($target, drush_get_option('component', 'path'), drush_get_option('local', FALSE));
   
   // If _drush_core_directory is working right, it will turn
   // %blah into the path to the item referred to by the key 'blah'.
@@ -833,7 +739,7 @@ function drush_core_drupal_directory($target = 'root') {
     drush_print($path);
   }
   else {
-    return drush_set_error(dt("Target '!target' not found.", array('!target' => $target)));
+    return drush_set_error('DRUSH_TARGET_NOT_FOUND', dt("Target '!target' not found.", array('!target' => $target)));
   }
 
   return TRUE;
@@ -866,10 +772,10 @@ function drush_core_find_project_path($target) {
 function drush_core_cli() {
   // Do not allow cli to start recursively, or from backend invoke.
   if (drush_get_option('in-cli', FALSE)) {
-    return drush_set_error(dt('Already in drush core-cli; press control-d to exit.'));
+    return drush_set_error('DRUSH_CLI_NOT_REENTRANT', dt('Already in drush core-cli; press control-d to exit.'));
   }
-  if (drush_get_context('DRUSH_BACKEND')) {
-    return drush_set_error(dt('Cannot run drush core-cli from non-interactive mode; aborting.'));
+  if (drush_get_context('DRUSH_BACKEND') || drush_get_context('DRUSH_AFFIRMATIVE') || drush_get_context('DRUSH_NEGATIVE')) {
+    return drush_set_error('DRUSH_CLI_INTERACTIVE_ERROR', dt('Cannot run drush core-cli from non-interactive mode; aborting.'));
   }
 
   // Make sure that we call drush the same way that we were called.
@@ -877,16 +783,10 @@ function drush_core_cli() {
 
   $bashrc_data = implode("/n/n", drush_command_invoke_all('cli_bashrc', $drush_command));
 
-  // Before entering the new bash script, cd to the current site root,
-  // if any.  This will make our default site for drush match the
-  // currently bootstrapped site (at least until the user cd's away).
-  if ($site_root = drush_get_context('DRUSH_DRUPAL_SITE_ROOT')) {
-    drush_op('chdir', $site_root);
-  }
-
-  // Print our entire bashrc file in verbose mode
-  if (drush_get_context('DRUSH_VERBOSE')) {
-    drush_print($bashrc_data);
+  // Print our bashrc file and exit in --pipe mode
+  if (drush_get_context('DRUSH_PIPE')) {
+    drush_print_pipe($bashrc_data);
+    return TRUE;
   }
 
   drush_print("Entering the drush cli.  Use CONTROL-D to exit.");
@@ -896,71 +796,150 @@ function drush_core_cli() {
   // control-d to exit.  The temp file will be deleted after
   // we exit.
   $bashrc = drush_save_data_to_temp_file($bashrc_data);
-  drush_op_system('bash --rcfile ' . $bashrc . ' > `tty`');
+  return drush_op_system('bash --rcfile ' . $bashrc . ' > `tty`');
 }
 
 // Implement our own hook_cli_bashrc()
 function core_cli_bashrc($drush_command) {
+  $initial_site = '';
+  $site_list = drush_sitealias_resolve_sitespecs(array('@self'));
+  if (!empty($site_list)) {
+    $site_list = array_keys($site_list);
+    if ($site_list[0] != "@self") {
+      $initial_site = $site_list[0];
+    }
+  }
+  if (empty($initial_site)) {
+    drush_sitealias_load_all(TRUE);
+    $initial_site = _drush_sitealias_find_local_alias_name(drush_get_context('DRUSH_DRUPAL_ROOT'), str_replace('http://','',drush_get_context('DRUSH_URI')));
+  }
+  
   // Set up our default bashrc file for the drush cli
-  $bashrc_data = <<<EOD
+  $bashrc_data = "# Set our initial site\nDRUPAL_SITE=$initial_site\n" . <<<EOD
 
-# source the user's .bashrc file
+# Set the DRUSH_CLI variable; it may also be of use 
+# in the user's .bashrc, or elsewhere.
+DRUSH_CLI=true
+
+# Source the user's .bashrc file.
 [ -r ~/.bashrc ] && {
   pushd ~ > /dev/null
   . .bashrc
   popd > /dev/null
 }
 
-PS1="drush> "
+# Display our initial site in the bash prompt.
+PS1="\$DRUPAL_SITE> "
 
+# When using the drush shell, all commands will
+# by default target the site specified by the
+# shell variable \$DRUPAL_SITE.  To run a command
+# on some other site, use either:
+#   drush @site command
+# or
+#   on @site command
 alias on="$drush_command"
 alias drush="$drush_command"
-DRUSH_CLI=true
 
-
-function cdd() {
-  TARGET=
-  PARAM=\$1
-  if [ \$# -gt 1 ] ; then
-    TARGET=\$1
-    PARAM=\$2
-  fi
-  DEST=`drush \$TARGET drupal-directory \$PARAM`
-  if [ \$? != 0 ] || [ -z "\$DEST" ]
+# To specify a new DRUPAL_SITE without changing
+# your current directory:
+#   use @site
+function use() {
+  if [ ! -z $1 ] && [ "x$1" != "x@self" ]
   then
-    echo "Target \$1 was not found."
-  else
-    echo "cd \$DEST"
-    cd \$DEST;
+    SITE=`drush site-alias $1 --short`
+    if [ \$? != 0 ] || [ -z "\$SITE" ]
+    then
+      echo "Alias $1 not found."
+    else
+      DRUPAL_SITE=$1
+      PS1="$1> "
+    fi
   fi
 }
 
-function lsd() {
-  TARGET=
-  PARAM=\$1
-  if [ \$# -gt 1 ] ; then
-    TARGET=\$1
-    PARAM=\$2
-  fi
-  DEST=`drush \$TARGET drupal-directory \$PARAM`
-  if [ \$? != 0 ] || [ -z "\$DEST" ]
+# We override the cd command to allow convenient
+# shorthand notations, such as:
+#   cd @site1
+#   cd %modules
+#   cd %devel
+#   cd @site2:%files
+# When changing the cwd to a new site, the DRUPAL_SITE
+# variable is also changed, so the new site becomes
+# the default drush target.
+function cd() {
+  # First special-case the no-parameter cd
+  if [ "x\$1" == "x" ]
   then
-    echo "Target \$1 was not found."
+    cd %root
+  # Next test and see if this should be an 'ordinary' cd
+  elif [ "x\$1" == "x-" ] || [ -d \$1 ]
+  then
+    builtin cd \$1;
   else
-    echo "ls \$DEST"
-    ls \$DEST;
+    # Do a special drush core-cli cd, handling
+    # shorthand notation directory names -- anything
+    # understood by drupal-directory
+    DEST=`drupal-directory \$1 --local`
+    if [ \$? == 0 ]
+    then
+      SITE=`drupal-directory \$1 --component=name`
+      if [ ! -z "\$SITE" ]
+      then
+        use \$SITE;
+      fi
+      echo "cd \$DEST";
+      builtin cd \$DEST;
+    fi
+  fi
+}
+
+# In drush-3, it was necessary to use cdd instead of
+# cd to be able to target special directories.  Continue
+# to accept cdd as an alias for cd.
+alias cdd=cd
+
+# The command lsd will quickly do an 'ls' on the
+# specified special drush directory, e.g.:
+#   lsd %modules
+function lsd() {
+  # First special-case the no-parameter cd
+  if [ "x\$1" == "x" ]
+  then
+    lsd %root
+  else
+    # Do a special drush core-cli cd, handling
+    # shorthand notation directory names -- anything
+    # understood by drupal-directory
+    DEST=`drupal-directory \$1 --local`
+    if [ \$? == 0 ]
+    then
+      echo "ls \$DEST";
+      ls \$DEST;
+    fi
   fi
 }
 
 EOD;
 
-  // Add aliases for all of our commands
+  // Add aliases for all drush commands
+  $bashrc_data .= "# Add aliases for all drush commands\n";
   $commands = drush_get_commands();
+  $cli_overrides = _convert_csv_to_array(drush_get_option('override', 'help,dd,sa'));
   foreach ($commands as $key => $command) {
-    // Filter out old commands that still have spaces
-    if (strpos($key, ' ') === FALSE) {
-      $bashrc_data .= "function $key() {\n  $drush_command $key \"\$@\"\n}\n";
+    // Filter out old commands that still have spaces;
+    // do not mask any existing bash command (e.g. 'grep')
+    // or builtin (e.g. 'eval') with drush aliases.
+    if ((strpos($key, ' ') === FALSE) && ((in_array($key, $cli_overrides)) || (!drush_shell_exec("which $key")) && (drush_shell_exec("builtin $key") != "1"))) {
+      $bashrc_data .= "function $key() {\n  $drush_command \$DRUPAL_SITE $key \"\$@\"\n}\n";
     }
+  }
+  // Before entering the new bash script, cd to the current site root,
+  // if any.  This will make our default site for drush match the
+  // currently bootstrapped site (at least until the user cd's away).
+  if ($site_root = drush_get_context('DRUSH_DRUPAL_SITE_ROOT')) {
+    $site_root = drush_get_context('DRUSH_DRUPAL_ROOT') . '/' . $site_root;
+    $bashrc_data .= "builtin cd $site_root\n";
   }
 
   return $bashrc_data;
