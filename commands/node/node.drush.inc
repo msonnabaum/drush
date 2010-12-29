@@ -26,17 +26,14 @@ function node_drush_command() {
     'aliases' => array('ns'),
   );
   $items['node-create'] = array(
-    'description' => "Print node objects to stdout",
-    'arguments' => array(
-      'nids' => "A list of space-separated node IDs to print to stdout.",
-    ),
+    'description' => "Create a node from a json object",
     'options' => array(
       'json' => "Output the node as JSON",
     ),
     'examples' => array(
-      'drush node-show 4' => 'Print the node object of node/4 to stdout',
+      'drush node-show 4 --json | drush node-create' => 'Copy node/4 to a new node.',
     ),
-    'aliases' => array('ns'),
+    'aliases' => array('nc'),
   );
   $items['node-edit'] = array(
     'description' => "Edit a node as json in the default editor",
@@ -51,7 +48,7 @@ function node_drush_command() {
   $items['node-delete'] = array(
     'description' => 'Delete nodes.',
     'arguments' => array(
-      'nid' => '',
+      'nid' => 'Node id to delete',
     ),
     'options' => array(
       '--type' => 'Restrict to a given content-type.',
@@ -61,6 +58,7 @@ function node_drush_command() {
       'node-delete 64' => '.',
       'node-delete --type=story' => '.',
     ),
+    'aliases' => array('nd'),
   );  
 
   return $items;
@@ -80,11 +78,11 @@ function node_drush_help($section) {
   case 'drush:node-show':
     return dt("Print node objects to stdout");
   case 'drush:node-create':
-    return dt("Print node objects to stdout");
+    return dt("Create a node from a json object");
   case 'drush:node-edit':
     return dt("Edit a node as json in the default editor");
   case 'drush:node-delete':
-      return dt('Delete nodes.');
+    return dt('Delete nodes.');
   }
 }
 
@@ -109,9 +107,18 @@ function drush_node_show($nids) {
 /**
  * Drush command callback.
  *
- * Show nodes.
+ * Create a node.
  */
 function drush_node_create() {
+  $node_json = stream_get_contents(STDIN);
+  if (!empty($node_json)) {
+    $node = json_decode($node_json);
+    if (!empty($node->nid)) unset($node->nid);
+    node_save($node);
+  }
+  else {
+    drush_set_error('DRUSH_NO_STDIN', dt("stdin empty!"));
+  }
 }
 
 /**
