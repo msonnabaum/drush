@@ -208,6 +208,9 @@ function _drush_sitealias_get_record($alias, $alias_context = NULL) {
   if (!empty($alias_record)) {
     // Load the drush config file if there is one associated with this alias
     if (!isset($alias_record['remote']) && !isset($alias_record['loaded-config'])) {
+      if (array_key_exists('root', $alias_record)) {
+        drush_sitealias_add_to_alias_path($alias_record['root']);
+      }
       $alias_site_dir = drush_sitealias_local_site_path($alias_record);
 
       if (isset($alias_site_dir)) {
@@ -247,7 +250,7 @@ function _drush_sitealias_get_record($alias, $alias_context = NULL) {
  */
 function drush_sitealias_add_to_alias_path($add_path) {
   static $site_paths = array();
-
+  
   if ($add_path != NULL) {
     if (!is_array($add_path)) {
       $add_path = explode(':', $add_path);
@@ -279,7 +282,16 @@ function drush_sitealias_alias_path($alias_path_context = NULL) {
     // We get the current list of site paths by adding NULL
     // (nothing) to the path list, which is a no-op
     $site_paths = drush_sitealias_add_to_alias_path(NULL);
-
+    
+    // If the user defined the root of a drupal site, then also
+    // look for alias files there.
+    $drupal_root = drush_get_context('DRUSH_DRUPAL_ROOT');
+    if (empty($drupal_root)) {
+      $drupal_root = drush_get_option(array('root', 'r'), NULL);
+    }
+    if (isset($drupal_root)) {
+      $site_paths[] = $drupal_root;
+    }
     $alias_path = (array) drush_get_option('alias-path', array());
     if (empty($alias_path)) {
       $alias_path[] = drush_get_context('ETC_PREFIX', '') . '/etc/drush';
@@ -290,7 +302,7 @@ function drush_sitealias_alias_path($alias_path_context = NULL) {
       }
     }
 
-    return array_merge($alias_path, $site_paths);
+    return array_unique(array_merge($alias_path, $site_paths));
   }
 }
 
@@ -555,6 +567,8 @@ function _drush_sitealias_add_inherited_values(&$aliases) {
  */
 function _drush_sitealias_cache_alias($alias_name, $alias_record) {
   $cache =& drush_get_context('site-aliases');
+  // If the alias already exists in the cache, then merge
+  // the new alias with the existing alias
   if (array_key_exists("@$alias_name", $cache)) {
     $alias_record = array_merge($cache["@$alias_name"], $alias_record);
   }
@@ -626,6 +640,11 @@ function drush_sitealias_add_db_settings(&$alias_record)
     if (isset($values['object'])) {
       $alias_record['databases'] = $values['object'];
       $altered_record = TRUE;
+      // If there are any special settings in the '@self' record returned by drush_invoke_sitealias_args,
+      // then add those into our altered record as well
+      if (array_key_exists('self', $values)) {
+        $alias_record = array_merge($values['self'], $alias_record);
+      }
       // If the name is set, then re-cache the record after we fetch the databases
       if (array_key_exists('name', $alias_record)) {
         $all_site_aliases =& drush_get_context('site-aliases');
@@ -1233,6 +1252,7 @@ function drush_convert_db_from_db_url($db_url) {
     'driver' => NULL,
     'user' => NULL,
     'pass' => NULL,
+    'host' => NULL,
     'port' => NULL,
     'database' => NULL,
   );
@@ -1311,7 +1331,7 @@ function _drush_sitealias_set_context_by_name($alias, $prefix = '') {
 /**
  * Given a site alias record, copy selected fields from it
  * into the drush 'alias' context.  The 'alias' context has
- * lower precedence than the 'options' context, so values
+ * lower precedence than the 'cli' context, so values
  * set by an alias record can be overridden by command-line
  * parameters.
  *
@@ -1336,6 +1356,19 @@ function drush_sitealias_set_alias_context($site_alias_settings, $prefix = '') {
     $skip_list[] = 'remote-host';
     $skip_list[] = 'remote-user';
   }
+  // If prefix is set, then copy from the 'prefix-' version
+  // of the drush special keys ('command-specific', 'path-aliases')
+  // into the ordinary version.  This will allow us to set
+  // 'source-command-specific' options that will only apply when
+  // the alias is used as the source option for rsync or sql-sync.
+  if (!empty($prefix)) {
+    $special_contexts = drush_get_special_keys();
+    foreach ($special_contexts as $option_name) {
+      if (array_key_exists($prefix . $option_name, $site_alias_settings)) {
+        $site_alias_settings[$option_name] = array_key_exists($option_name, $site_alias_settings) ? array_merge($site_alias_settings[$option_name], $site_alias_settings[$prefix . $option_name]) : $site_alias_settings[$prefix . $option_name];
+      }
+    }
+  }
   // Transfer all options from the site alias to the drush options
   // in the 'alias' context.
   foreach ($site_alias_settings as $key => $value) {
@@ -1351,6 +1384,10 @@ function drush_sitealias_set_alias_context($site_alias_settings, $prefix = '') {
           $options[$prefix . substr($path_key, 1)] = $evaluated_path;
         }
       }
+    }
+    // Special handling for command-specific
+    elseif ($key == "command-specific") {
+      $options[$key] = $value;
     }
     elseif (!in_array($key, $skip_list)) {
       $options[$prefix . $key] = $value;

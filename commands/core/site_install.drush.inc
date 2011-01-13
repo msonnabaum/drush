@@ -27,7 +27,7 @@ function drush_core_pre_site_install() {
   $msg[] = dt("DROP your '@db' database and then CREATE a new one.", array('@db' => $db_spec['database']));
 
   if (!drush_confirm(dt('You are about to ') . implode(dt(' and '), $msg) . ' Do you want to continue?')) {
-    return drush_set_error('CORE_SITE_INSTALL_ABORT', 'Aborting.');
+    return drush_user_abort();
   }
 
   // Can't install without sites directory and settings.php.
@@ -59,8 +59,8 @@ function drush_core_pre_site_install() {
     }
   }
 
-  // Now we can bootstrap up to the specified site if not already there.
-  drush_bootstrap(DRUSH_BOOTSTRAP_DRUPAL_SITE);
+  // Now we can bootstrap up to the specified site.
+  drush_bootstrap(DRUSH_BOOTSTRAP_DRUPAL_CONFIGURATION);
 
   // Drop and create DB if needed.
   $db_name = $db_spec['database'];

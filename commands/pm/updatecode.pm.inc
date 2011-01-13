@@ -152,6 +152,12 @@ function drush_pm_updatecode() {
     }
   }
 
+  // First check to see if there is a newer drush.
+  $drush_update_available = NULL;
+  if (drush_get_option('self-update', TRUE)) {
+    $drush_update_available = drush_self_update(FALSE, FALSE);
+  }
+  
   // Do no updates in simulated mode
   if (drush_get_context('DRUSH_SIMULATE')) {
     return drush_log(dt('No action taken in simulated mode.'), 'ok');
@@ -183,7 +189,13 @@ function drush_pm_updatecode() {
     }
   }
 
+  // If there are no releases to update, then print a final
+  // exit message.  Supress the message if we already printed
+  // a message about a drush update being available.
   if (empty($updateable)) {
+    if ($drush_update_available === TRUE) {
+      return FALSE;
+    }
     if ($security_only) {
       return drush_log(dt('No security updates available.'), 'ok');
     }
@@ -224,7 +236,7 @@ function _pm_update_core(&$project, $tmpfile) {
     _drush_pm_releasenotes(array('drupal'), TRUE, $tmpfile);
   }
   if(!drush_confirm(dt('Do you really want to continue?'))) {
-    drush_user_abort();
+    return drush_user_abort();
   }
 
   // We need write permission on $drupal_root.
@@ -283,6 +295,9 @@ function _pm_update_core(&$project, $tmpfile) {
   // the drupal root
   _pm_update_move_files($project['full_project_path'], $drupal_root, $project['skip_list']);
   drush_delete_dir($project['full_project_path']);
+  
+  // Version control engines expect full_project_path to exist and be accurate.
+  $project['full_project_path'] = $project['base_project_path'];
 
   // If there is a backup target, then find items
   // in the backup target that do not exist at the
@@ -355,7 +370,6 @@ function pm_update_packages($update_info, $tmpfile) {
 
   // We print some warnings before the user confirms the update.
   drush_print();
-  drush_print(dt("Note: Updated projects can potentially break your site. It is NOT recommended to update production sites without prior testing."));
   if (drush_get_option('no-backup', FALSE)) {
     drush_print(dt("Note: You have selected to not store backups."));
   }
@@ -364,7 +378,7 @@ function pm_update_packages($update_info, $tmpfile) {
     drush_print(dt('Note: If you have made any modifications to any file that belongs to one of these projects, you will have to migrate those modifications after updating.'));
   }
   if(!drush_confirm(dt('Do you really want to continue with the update process?'))) {
-    drush_user_abort();
+    return drush_user_abort();
   }
 
   // Now we start the actual updating.
@@ -399,8 +413,6 @@ function pm_update_packages($update_info, $tmpfile) {
     }
     pm_update_complete($project, $version_control);
   }
-  // Clear the cache, since some projects could have moved around.
-  drush_drupal_cache_clear_all();
 
   return TRUE;
 }
@@ -517,10 +529,12 @@ function pm_project_filter(&$update_info, &$rows, $security_only) {
     // Special checking:  if drush decides that the candidate version is older
     // than the installed version, then we will set the candidate version to
     // the installed version.
-    if ($project['releases'][$project['candidate_version']]['date'] < $project['releases'][$project['existing_version']]['date']) {
-      $project['candidate_version'] = $project['existing_version'];
+    if (isset($project['candidate_version'], $project['releases'][$project['candidate_version']], $project['releases'][$project['existing_version']])) {
+      if ($project['releases'][$project['candidate_version']]['date'] < $project['releases'][$project['existing_version']]['date']) {
+        $project['candidate_version'] = $project['existing_version'];
+      }
     }
-    
+
     if (isset($project['locked'])) {
       $status = $project['locked'] . " ($status)";
     }

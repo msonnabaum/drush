@@ -6,22 +6,34 @@
  */
 
 /**
+ * Implementation of hook_drush_help().
+ */
+function sql_drush_help($section) {
+  switch ($section) {
+    case 'meta:sql:title':
+      return dt('SQL commands');
+    case 'meta:sql:summary':
+      return dt('Examine and modify your Drupal database.');
+  }
+}
+
+/**
  * Implementation of hook_drush_command().
  */
 function sql_drush_command() {
-  $options['--database'] = 'The DB connection key if using multiple connections in settings.php.';
+  $options['database'] = 'The DB connection key if using multiple connections in settings.php.';
   if (drush_drupal_major_version() >= 7) {
-    $options['--target'] = 'The name of a target within the specified database.';
+    $options['target'] = 'The name of a target within the specified database.';
   }
 
   $items['sql-drop'] = array(
     'description' => 'Drop all tables in a given database.',
     'arguments' => array(
     ),
-    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_DATABASE,
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_CONFIGURATION,
     'options' => array(
-      '--yes' => 'Skip confirmation and proceed.',
-      '--result-file' => 'Save to a file. The file should be relative to Drupal root. Recommended.',
+      'yes' => 'Skip confirmation and proceed.',
+      'result-file' => 'Save to a file. The file should be relative to Drupal root. Recommended.',
     ) + $options,
     'topics' => array('docs-policy'),
   );
@@ -52,16 +64,16 @@ function sql_drush_command() {
       'drush sql-dump --skip-tables-key=common' => 'Skip standard tables. @see example.drushrc.com',
     ),
     'options' => array(
-      '--result-file' => 'Save to a file. The file should be relative to Drupal root. Recommended.',
-      '--skip-tables-key' => 'A key in the $skip_tables array. @see example.drushrc.php. Optional.',
-      '--structure-tables-key' => 'A key in the $structure_tables array. @see example.drushrc.php. Optional.',
-      '--tables-key' => 'A key in the $tables array. Optional.',
-      '--tables-list' => 'A comma-separated list of tables to transfer. Optional.',
-      '--ordered-dump' => 'Use this option to output ordered INSERT statements in the sql-dump.Useful when backups are managed in a Version Control System. Optional.',
-      '--create-db' => 'Wipe existing tables.',
-      '--data-only' => 'Omit CREATE TABLE statements. Postgres only.',
-      '--ordered-dump' => 'Order by primary key and add line breaks for efficient diff in revision control. Also, faster rsync. Slows down the dump. Mysql only.',
-      '--gzip' => 'Compress the dump using the gzip program which must be in your $PATH.',
+      'result-file' => 'Save to a file. The file should be relative to Drupal root. If --result-file is provided with no value, then date based filename will be created under ~/drush-backups directory.',
+      'skip-tables-key' => 'A key in the $skip_tables array. @see example.drushrc.php. Optional.',
+      'structure-tables-key' => 'A key in the $structure_tables array. @see example.drushrc.php. Optional.',
+      'tables-key' => 'A key in the $tables array. Optional.',
+      'tables-list' => 'A comma-separated list of tables to transfer. Optional.',
+      'ordered-dump' => 'Use this option to output ordered INSERT statements in the sql-dump.Useful when backups are managed in a Version Control System. Optional.',
+      'create-db' => 'Wipe existing tables.',
+      'data-only' => 'Omit CREATE TABLE statements. Postgres only.',
+      'ordered-dump' => 'Order by primary key and add line breaks for efficient diff in revision control. Also, faster rsync. Slows down the dump. Mysql only.',
+      'gzip' => 'Compress the dump using the gzip program which must be in your $PATH.',
     ) + $options,
   );
   $items['sql-query'] = array(
@@ -69,12 +81,13 @@ function sql_drush_command() {
     'description' => 'Execute a query against the site database.',
     'examples' => array(
       'drush sql-query "SELECT * FROM {users} WHERE uid=1"' => 'Browse user record. Table prefixes are honored.',
+      '`drush sql-connect` < example.sql' => 'Import sql statements from a file into the current database.',
     ),
     'arguments' => array(
        'query' => 'An SQL query.',
     ),
     'options' => array(
-      '--extra' => 'Add custom options to the mysql command.',
+      'extra' => 'Add custom options to the mysql command.',
     ) + $options,
     'aliases' => array('sqlq'),
   );
@@ -89,37 +102,38 @@ function sql_drush_command() {
       'to' => 'Name of subdirectory within /sites or a site-alias.',
     ),
     'options' => array(
-      '--skip-tables-key' => 'A key in the $skip_tables array. @see example.drushrc.php. Optional.',
-      '--structure-tables-key' => 'A key in the $structure_tables array. @see example.drushrc.php. Optional.',
-      '--tables-key' => 'A key in the $tables array. Optional.',
-      '--tables-list' => 'A comma-separated list of tables to transfer. Optional.',
-      '--cache' => 'Skip dump if result file exists and is less than "cache" hours old. Optional; default is 24 hours.',
-      '--no-cache' => 'Do not cache the sql-dump file.',
-      '--no-dump' => 'Do not dump the sql database; always use an existing dump file.',
-      '--source-db-url' => 'Database specification for source system to dump from.',
-      '--source-remote-port' => 'Override sql database port number in source-db-url. Optional.',
-      '--source-remote-host' => 'Remote machine to run sql-dump file on. Optional; default is local machine.',
-      '--source-dump' => 'Path to dump file. Optional; default is to create a temporary file.',
-      '--target-database' => 'A key in the $db_url (D6) or $databases (D7+) array which provides the data.',
-      '--source-target' => 'Oy. A key within the --target_database identifying a particular server in the database group.',
-      '--target-db-url' => '',
-      '--target-remote-port' => '',
-      '--target-remote-host' => '',
-      '--target-dump' => '',
-      '--target-database' => 'A key in the $db_url (D6) or $databases (D7+) array which shall receive the data.',
-      '--target-target' => 'Oy. A key within the --target_database identifying a particular server in the database group.',
-      '--temp' => 'Use a temporary file to hold dump files.  Implies --no-cache.',
-      '--dump-dir' => 'Directory to store sql dump files in when --source-dump or --target-dump are not used.  Takes precedence over --temp.',
-      '--create-db' => 'Create a new database before importing the database dump on the target machine.',
-      '--db-su' => 'Account to use when creating a new database. Optional.',
-      '--db-su-pw' => 'Password for the "db-su" account. Optional.',
-      '--sanitize' => 'Obscure email addresses and reset passwords in the user table post-sync. Optional.',
+      'skip-tables-key' => 'A key in the $skip_tables array. @see example.drushrc.php. Optional.',
+      'structure-tables-key' => 'A key in the $structure_tables array. @see example.drushrc.php. Optional.',
+      'tables-key' => 'A key in the $tables array. Optional.',
+      'tables-list' => 'A comma-separated list of tables to transfer. Optional.',
+      'cache' => 'Skip dump if result file exists and is less than "cache" hours old. Optional; default is 24 hours.',
+      'no-cache' => 'Do not cache the sql-dump file.',
+      'no-dump' => 'Do not dump the sql database; always use an existing dump file.',
+      'source-db-url' => 'Database specification for source system to dump from.',
+      'source-remote-port' => 'Override sql database port number in source-db-url. Optional.',
+      'source-remote-host' => 'Remote machine to run sql-dump file on. Optional; default is local machine.',
+      'source-dump' => 'Path to dump file. Optional; default is to create a temporary file.',
+      'target-database' => 'A key in the $db_url (D6) or $databases (D7+) array which provides the data.',
+      'source-target' => 'Oy. A key within the --target_database identifying a particular server in the database group.',
+      'target-db-url' => '',
+      'target-remote-port' => '',
+      'target-remote-host' => '',
+      'target-dump' => '',
+      'target-database' => 'A key in the $db_url (D6) or $databases (D7+) array which shall receive the data.',
+      'target-target' => 'Oy. A key within the --target_database identifying a particular server in the database group.',
+      'temp' => 'Use a temporary file to hold dump files.  Implies --no-cache.',
+      'dump-dir' => 'Directory to store sql dump files in when --source-dump or --target-dump are not used.  Takes precedence over --temp.',
+      'create-db' => 'Create a new database before importing the database dump on the target machine.',
+      'db-su' => 'Account to use when creating a new database. Optional.',
+      'db-su-pw' => 'Password for the "db-su" account. Optional.',
+      'no-ordered-dump' => 'Do not pass --ordered-dump to sql-dump.  sql-sync orders the dumpfile by default in order to increase the efficiency of rsync.',
+      'sanitize' => 'Obscure email addresses and reset passwords in the user table post-sync. Optional.',
     ),
     'sub-options' => array(
-      '--sanitize' => array(
-        '--sanitize-password' => 'The password to assign to all accounts in the sanitization operation, or "no" to keep passwords unchanged.  Default is "password".',
-        '--sanitize-email' => 'The username for test email addresses in the sanitization operation, or "no" to keep email addresses unchanged.  May contain replacement patterns %uid, %mail or %login.  Default is "user+%uid@localhost".',
-        '--confirm-sanitizations' => 'Prompt yes/no after importing the database, but before running the sanitizations',
+      'sanitize' => array(
+        'sanitize-password' => 'The password to assign to all accounts in the sanitization operation, or "no" to keep passwords unchanged.  Default is "password".',
+        'sanitize-email' => 'The username for test email addresses in the sanitization operation, or "no" to keep email addresses unchanged.  May contain replacement patterns %uid, %mail or %login.  Default is "user+%uid@localhost".',
+        'confirm-sanitizations' => 'Prompt yes/no after importing the database, but before running the sanitizations',
       ),
     ),
     'topics' => array('docs-aliases', 'docs-policy'),
@@ -127,8 +141,8 @@ function sql_drush_command() {
   if (drush_drupal_major_version() >= 7) {
 
     $items['sql-sync']['options'] += array(
-      '--source-target' => 'The name of a target within the SOURCE database.',
-      '--destination-target' => 'The name of a target within the specified DESTINATION database.',
+      'source-target' => 'The name of a target within the SOURCE database.',
+      'destination-target' => 'The name of a target within the specified DESTINATION database.',
     );
   }
   $items['sql-cli'] = array(
@@ -262,7 +276,7 @@ function drush_sql_build_dump_command($table_selection, $db_spec = NULL) {
       // User did not pass a specific value for --result-file. Make one.
       drush_include_engine('version_control', 'backup');
       $backup = new drush_pm_version_control_backup();
-      $backup_dir = $backup->prepare_backup_dir($db_spec['database'] . '_');
+      $backup_dir = $backup->prepare_backup_dir($db_spec['database']);
       if (empty($backup_dir)) {
         $backup_dir = "/tmp";
       }
@@ -388,7 +402,7 @@ function drush_sql_build_dump_command($table_selection, $db_spec = NULL) {
  *   found, or an empty array if there were no matches.
  */
 function _drush_sql_get_table_list($option_name) {
-  foreach(array('' => 'options', 'target-,,source-' => NULL) as $prefix_list => $context) {
+  foreach(array('' => 'cli', 'target-,,source-' => NULL) as $prefix_list => $context) {
     foreach(explode(',',$prefix_list) as $prefix) {
       $key_list = drush_get_option($prefix . $option_name . '-key', NULL, $context);
       foreach(explode(',', $key_list) as $key) {
@@ -454,7 +468,7 @@ function _drush_sql_query($query, $db_spec = NULL) {
 
 function drush_sql_drop() {
   if (!drush_confirm(dt('Do you really want to drop all tables?'))) {
-    drush_user_abort();
+    return drush_user_abort();
   }
   _drush_sql_drop();
 }
@@ -517,7 +531,7 @@ function _drush_sql_drop($db_spec = NULL) {
       // Shift off the header of the column of data returned.
       array_shift($tables);
       $sql = 'DROP TABLE '. implode(', ', $tables);
-      return drush_op('db_query', $sql);
+      return _drush_sql_query($sql, $db_spec);
     }
   }
   else {
@@ -832,16 +846,15 @@ function drush_sql_build_exec($db_spec, $filepath) {
   $scheme = _drush_sql_get_scheme($db_spec);
   switch ($scheme) {
     case 'mysql':
-      $exec = 'mysql' . (drush_get_context('DRUSH_VERBOSE') ? ' -v' : '');
+      $exec = 'mysql';
       $exec .= _drush_sql_get_credentials($db_spec);
       $exec .= ' ' . drush_get_option('extra');
       $exec .= " < $filepath";
 
       break;
     case 'pgsql':
-      $exec = 'psql';
+      $exec = 'psql -q ';
       $exec .= _drush_sql_get_credentials($db_spec);
-      $exec .= (drush_get_context('DRUSH_VERBOSE') ? '' : ' -q');
       $exec .= ' ' . (drush_get_option('extra') ? drush_get_option('extra') : "--no-align --field-separator='\t' --pset footer=off");
       $exec .= " --file $filepath";
       break;

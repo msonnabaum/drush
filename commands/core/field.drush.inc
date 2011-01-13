@@ -7,6 +7,18 @@
  */
 
 /**
+ * Implementation of hook_drush_help().
+ */
+function field_drush_help($section) {
+  switch ($section) {
+    case 'meta:field:title':
+      return dt('Field commands');
+    case 'meta:field:summary':
+      return dt('Manipulate Drupal 7+ fields.');
+  }
+}
+
+/**
  * Implementation of hook_drush_command().
  */
 function field_drush_command() {
@@ -145,7 +157,7 @@ function drush_field_delete($field_name) {
     }
     else {
       if (!drush_confirm(dt('Do you want to delete the %field_name field?', array('%field_name' => $field_name)))) {
-        return drush_log(dt('Aborting.'));
+        return drush_user_abort();
       }
     }
   }

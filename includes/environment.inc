@@ -509,9 +509,6 @@ function _drush_bootstrap_drush_validate() {
     return FALSE;
   }
   
-  // Set a warning for Windows users.
-  drush_environment_check_os();
-  
   return TRUE;
 }
 
@@ -811,6 +808,7 @@ function _drush_bootstrap_do_drupal_site() {
 
   drush_log(dt("Initialized Drupal site !site at !site_root", array('!site' => $site, '!site_root' => $conf_path)));
   drush_load_config('site');
+  
   _drush_bootstrap_global_options();
 }
 
@@ -823,6 +821,9 @@ function _drush_bootstrap_do_drupal_site() {
 function _drush_bootstrap_drupal_site() {
   _drush_bootstrap_do_drupal_site();
   _drush_bootstrap_redo_drupal_site();
+  
+  // Set warning for Windows users. We have already loaded site-specific drushrc.
+  drush_environment_check_os();
 }
 
 /**
@@ -901,6 +902,14 @@ function _drush_bootstrap_drupal_configuration() {
      default:
        if (!empty($GLOBALS['databases']['default']['default'])) {
          $conn = $GLOBALS['databases']['default']['default'];
+         // Fill in defaults to prevent notices.
+         $conn += array(
+           'username' => NULL,
+           'host' => NULL,
+           'port' => NULL,
+           'password' => NULL,
+           'database' => NULL,
+         );
          $creds['driver'] = $conn['driver'];
          $creds['user'] = $conn['username'];
          $creds['host'] = $conn['host'];
@@ -1274,7 +1283,7 @@ function drush_find_drush() {
  */
 function drush_read_drush_info() {
   $drush_info_file = dirname(__FILE__) . '/../drush.info';
-
+  
   return parse_ini_file($drush_info_file);
 }
 

@@ -24,13 +24,14 @@ function sitealias_drush_command() {
       'site' => 'Site specification alias to print',
     ),
     'options' => array(
-      '--full' => 'Print the full alias record for each site.  Default when aliases are specified on the command line.',
-      '--short' => 'Print only the site alias name.  Default when not command line arguments are specified.',
-      '--pipe' => 'Print the long-form site specification for each site.',
-      '--with-db' => 'Include the databases structure in the full alias record.',
-      '--with-db-url' => 'Include the short-form db-url in the full alias record.',
-      '--no-db' => 'Do not include the database record in the full alias record (default).',
-      '--with-optional' => 'Include optional default items.',
+      'full' => 'Print the full alias record for each site.  Default when aliases are specified on the command line.',
+      'component' => 'Print only the specified element from the full alias record.',
+      'short' => 'Print only the site alias name.  Default when not command line arguments are specified.',
+      'pipe' => 'Print the long-form site specification for each site.',
+      'with-db' => 'Include the databases structure in the full alias record.',
+      'with-db-url' => 'Include the short-form db-url in the full alias record.',
+      'no-db' => 'Do not include the database record in the full alias record (default).',
+      'with-optional' => 'Include optional default items.',
     ),
     'aliases' => array('sa'),
     'examples' => array(
@@ -137,7 +138,18 @@ function drush_sitealias_print() {
       $site_specs[] = drush_sitealias_alias_record_to_spec($alias_record, $with_db);
     }
     if (isset($full_output)) {
-      _drush_sitealias_print_record($alias_record, $site);
+      $component = drush_get_option('component');
+      if ($component) {
+        if (array_key_exists($component, $alias_record)) {
+	  drush_print($alias_record[$component]);
+	}
+	else {
+	  drush_set_error('DRUSH_NO_SUCH_ELEMENT', dt('The element @component was not found in the alias record for @site.', array('@component' => $component, '@site' => $site)));
+	}
+      }
+      else {
+        _drush_sitealias_print_record($alias_record, $site);
+      }
     }
     else {
       drush_print($site);

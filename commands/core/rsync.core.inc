@@ -37,7 +37,7 @@ function drush_core_rsync($source, $destination, $additional_options = array()) 
   if ($is_multiple === FALSE) {
     // If the user path is the same for the source and the destination, then
     // always add a slash to the end of the source.  If the user path is not
-    // the same in the source and the destinaiton, then you need to know how
+    // the same in the source and the destination, then you need to know how
     // rsync paths work, and put on the trailing '/' if you want it.
     if ($source_settings['user-path'] == $destination_settings['user-path']) {
       $source_path .= '/';
@@ -47,7 +47,7 @@ function drush_core_rsync($source, $destination, $additional_options = array()) 
       drush_print(dt("You will destroy data from !target and replace with data from !source", array('!source' => $source_path, '!target' => $destination_path)));
       if (!drush_confirm(dt('Do you really want to continue?'))) {
         // was: return drush_set_error('CORE_SYNC_ABORT', 'Aborting.');
-        drush_user_abort();
+        return drush_user_abort();
       }
     }
 

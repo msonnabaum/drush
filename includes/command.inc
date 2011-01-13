@@ -23,7 +23,8 @@
  * Additionally, the ability to rollback when an error has been encountered is also provided.
  * If at any point during execution, the drush_get_error() function returns anything but 0,
  * drush_invoke() will trigger $hook_rollback for each of the hooks that implement it,
- * in reverse order from how they were executed.
+ * in reverse order from how they were executed.  Rollbacks are also triggered any
+ * time a hook function returns FALSE.
  *
  * This function will also trigger pre_$hook and post_$hook variants of the hook
  * and its rollbacks automatically.
@@ -107,12 +108,10 @@ function drush_invoke($command) {
         $all_available_hooks[] = $func . ' [*]';
         $available_rollbacks[] = $func . '_rollback';
         $completed[] = $func;
-        call_user_func_array($func, $args);
+        $result = call_user_func_array($func, $args);
         _drush_log_drupal_messages();
-        if (drush_get_error()) {
-          drush_log(dt('An error occurred at function : @func', array('@func' => $func)), 'error');
+        if (drush_get_error() || ($result === FALSE)) {
           $rollback = TRUE;
-
           // break out of the foreach variations and foreach list
           break 2;
         }
@@ -143,7 +142,7 @@ function drush_invoke($command) {
       if (function_exists($rb_func)) {
         call_user_func_array($rb_func, $args);
         _drush_log_drupal_messages();
-        drush_log("Changes for $func module have been rolled back.", 'rollback');
+        drush_log(dt("Changes made in !func have been rolled back.", array('!func' => $func)), 'rollback');
       }
     }
   }
@@ -209,7 +208,9 @@ function drush_dispatch($command, $arguments = array()) {
  *   The drush command to execute.
  * @return
  *   If the command could not be completed successfully, FALSE.
- *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
+ *   If the command was completed, this will return an associative 
+ *   array containing the results of the API call. 
+ *   @see drush_backend_get_result()
  */
 function drush_invoke_process($command_name) {
   $args = func_get_args();
@@ -224,7 +225,9 @@ function drush_invoke_process($command_name) {
  *   The drush command to execute.
  * @return
  *   If the command could not be completed successfully, FALSE.
- *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
+ *   If the command was completed, this will return an associative 
+ *   array containing the results of the API call. 
+ *   @see drush_backend_get_result()
  */
 function drush_invoke_process_args($command_name, $commandline_args, $commandline_options = array()) {
   return drush_backend_invoke_args($command_name, $commandline_args, $commandline_options);
@@ -240,7 +243,9 @@ function drush_invoke_process_args($command_name, $commandline_args, $commandlin
  *  The command to invoke.
  * @return
  *   If the command could not be completed successfully, FALSE.
- *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
+ *   If the command was completed, this will return an associative 
+ *   array containing the results of the API call. 
+ *   @see drush_backend_get_result()
  */
 function drush_invoke_sitealias($site_alias_record, $command_name) {
   $args = func_get_args();
@@ -264,9 +269,17 @@ function drush_invoke_sitealias($site_alias_record, $command_name) {
  *  The options (e.g. --select) to provide to the command.
  * @return
  *   If the command could not be completed successfully, FALSE.
- *   If the command was completed, this will return an associative array containing the data from drush_backend_output().
+ *   If the command was completed, this will return an associative 
+ *   array containing the results of the API call. 
+ *   @see drush_backend_get_result()
  */
 function drush_invoke_sitealias_args($site_alias_record, $command_name, $commandline_args, $commandline_options = array()) {
+  // If the first parameter is not a site alias record,
+  // then presume it is an alias name, and try to look up
+  // the alias record.
+  if (!is_array($site_alias_record)) {
+    $site_alias_record = drush_sitealias_get_record($site_alias_record);
+  }
   return drush_do_site_command($site_alias_record, $command_name, $commandline_args, $commandline_options);
 }
 
@@ -282,8 +295,8 @@ function drush_invoke_sitealias_args($site_alias_record, $command_name, $command
  */
 function drush_redispatch_get_options() {
   // Start off by taking everything from the site alias and command line
-  // ('options' context)
-  $options = array_merge(drush_get_context('alias'), drush_get_context('options'));
+  // ('cli' context)
+  $options = array_merge(drush_get_context('alias'), drush_get_context('cli'));
   $options = array_diff_key($options, array_flip(drush_sitealias_site_selection_keys()));
   unset($options['command-specific']);
   unset($options['path-aliases']);
@@ -383,14 +396,22 @@ function drush_parse_args() {
       $arguments[] = $opt;
     }
   }
-  // If no arguments are specified, print the help screen.
-  $arguments = sizeof($arguments) ? $arguments : array('help');
+  // If no arguments are specified, then the command will
+  // be either 'help' or 'version' (the later if --version is specified)
+  if (!sizeof($arguments)) {
+    if (array_key_exists('version', $options)) {
+      $arguments = array('version');
+    }
+    else {
+      $arguments = array('help');
+    }
+  }
   
   // Handle the "@shift" alias, if present
   drush_process_bootstrap_to_first_arg($arguments);
   
   drush_set_arguments($arguments);
-  drush_set_context('options', $options);
+  drush_set_context('cli', $options);
 }
 
 /**
@@ -506,10 +527,10 @@ function drush_process_bootstrap_to_first_arg(&$arguments) {
       $shifted_alias = $arguments[$shift_alias_pos];
       $alias_record = drush_sitealias_get_record($shifted_alias);
       if (!empty($alias_record)) {
-	// Move the alias we shifted from its current position
-	// in the argument list to the front of the list
-	array_splice($arguments, $shift_alias_pos, 1);
-	array_unshift($arguments, $shifted_alias);
+        // Move the alias we shifted from its current position
+        // in the argument list to the front of the list
+        array_splice($arguments, $shift_alias_pos, 1);
+        array_unshift($arguments, $shifted_alias);
       }
     }
   }
@@ -985,15 +1006,6 @@ function drush_command_default_options($command = NULL) {
         }
       }
     }
-    // Take the time here to clear out any options that may
-    // have "--no-xxx" overrides on the command line.
-    $commandline_options = drush_get_context('options');
-    foreach ($commandline_options as $key => $value) {
-      if (substr($key, 0, strlen("no-") ) == "no-") {
-        drush_unset_option(substr($key, strlen("no-")));
-        $options_were_set = TRUE;
-      }
-    }
     // If we set or cleared any options, go back and re-bootstrap any global
     // options such as -y and -v.
     if ($options_were_set) {
@@ -1010,8 +1022,10 @@ function _drush_command_set_default_options($command) {
       // We set command-specific options in their own context
       // that is higher precidence than the various config file
       // context, but lower than command-line options.
-      drush_set_option($key, $value, 'specific');
-      $options_were_set = TRUE;
+      if (!drush_get_option('no-' . $key, FALSE)) {
+        drush_set_option($key, $value, 'specific');
+        $options_were_set = TRUE;
+      }
     }
   }
   return $options_were_set;
@@ -1076,7 +1090,7 @@ function drush_scan_directory($dir, $mask, $nomask = array('.', '..', 'CVS'), $c
   $key = (in_array($key, array('filename', 'basename', 'name')) ? $key : 'filename');
   $files = array();
 
-  if (is_dir($dir) && $handle = opendir($dir)) {
+  if (is_string($dir) && is_dir($dir) && $handle = opendir($dir)) {
     while (FALSE !== ($file = readdir($handle))) {
       if (!in_array($file, $nomask) && (($include_dot_files && (!preg_match("/\.\+/",$file))) || ($file[0] != '.'))) {
         if (is_dir("$dir/$file") && (($recurse_max_depth === TRUE) || ($depth < $recurse_max_depth))) {
