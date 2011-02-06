@@ -800,8 +800,8 @@ function drush_remote_command() {
         }
       }
       $multi_options['reserve-margin'] = $max_name_length + strlen($label_separator);
-      foreach ($site_list as $alias_name => $alias_record) {
-        $values = drush_do_site_command($alias_record, $command, $args, $multi_options);
+      $site_values = drush_do_site_command($site_list, $command, $args, $multi_options);
+      foreach ($site_values as $alias_name => $values) {
         foreach (explode("\n", $values['output']) as $line) {
           if (empty($line)) {
             drush_print();
@@ -891,15 +891,17 @@ function drush_do_multiple_command($command, $source_record, $destination_record
  * drush_invoke_sitealias_args.  Please call the standard function
  * unless you need to set $integrate = TRUE.
  */
-function drush_do_site_command($site_record, $command, $args = array(), $data = array(), $integrate = FALSE) {
+function drush_do_site_command($site_records, $command, $args = array(), $data = array(), $integrate = FALSE) {
   $values = NULL;
-  if (!empty($site_record)) {
-    foreach ($site_record as $key => $value) {
-      if (!isset($data[$key]) && !in_array($key, drush_sitealias_site_selection_keys())) {
-        $data[$key] = $site_record[$key];
+  if (!empty($site_records)) {
+    foreach ($site_records as $site_name => $site_record) {
+      foreach ($site_record as $key => $value) {
+        if (!isset($data[$site_name][$key]) && !in_array($key, drush_sitealias_site_selection_keys())) {
+          $data[$site_name][$key] = $site_record[$key];
+        }
       }
     }
-    $values = drush_backend_invoke_sitealias($site_record, $command, $args, $data, 'GET', $integrate);
+    $values = drush_backend_invoke_sitealias($site_records, $command, $args, $data, 'GET', $integrate);
   }
   return $values;
 }
