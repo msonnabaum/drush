@@ -961,16 +961,22 @@ function _drush_find_commandfiles($phase, $phase_max = FALSE) {
 }
 
 function _drush_add_commandfiles($searchpath, $phase = NULL) {
-  $cache =& drush_get_context('DRUSH_COMMAND_FILES', array());
-
   static $evaluated = array();
   static $deferred = array();
+
+  $cache =& drush_get_context('DRUSH_COMMAND_FILES', array());
 
   if (sizeof($searchpath)) {
     // Build a list of all of the modules to attempt to load.
     // Start with any modules deferred from a previous phase.
     $list = $deferred;
 
+  $cache_key = 'commandfiles-' . $phase;
+  $command_cache = _drush_cache_get($cache_key);
+  if (!empty($command_cache->data)) {
+    $list = $command_cache->data;
+  }
+  else {
     // Scan for drush command files; add to list for consideration if found.
     foreach (array_unique($searchpath) as $path) {
       if (is_dir($path)) {
@@ -986,6 +992,8 @@ function _drush_add_commandfiles($searchpath, $phase = NULL) {
         }
       }
     }
+    _drush_cache_set($cache_key, $list);
+  }
 
     // Check each file in the consideration list; if there is
     // a modulename_drush_load() function in modulename.drush.load.inc,

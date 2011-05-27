@@ -1463,3 +1463,45 @@ function drush_map_assoc($array, $function = NULL) {
   }
   return $array;
 }
+
+function _drush_cache_get_object($bin) {
+  // We do not use drupal_static() here because we do not want to change the
+  // storage of a cache bin mid-request.
+  static $cache_objects;
+  drush_include(DRUSH_BASE_PATH . '/includes', 'mongodb_cache');
+
+  if (!isset($cache_objects[$bin])) {
+    $class = drush_get_option('cache-class-' . $bin, NULL);
+    if (!isset($class)) {
+      $class = drush_get_option('cache-default-class', 'DrushMongoDBCache');
+    }
+    $cache_objects[$bin] = new $class($bin);
+  }
+  return $cache_objects[$bin];
+}
+
+
+
+function _drush_cache_get($cid, $bin = 'cache') {
+  return _drush_cache_get_object($bin)->get($cid);
+}
+
+
+function _drush_cache_set($cid, $data, $bin = 'cache', $expire = CACHE_PERMANENT) {
+  return _drush_cache_get_object($bin)->set($cid, $data, $expire);
+}
+
+function _drush_cache_clear_all($cid = NULL, $bin = NULL, $wildcard = FALSE) {
+  if (!isset($cid) && !isset($bin)) {
+    // Clear the block cache first, so stale data will
+    // not end up in the page cache.
+    if (module_exists('block')) {
+      _drush_cache_clear_all(NULL, 'cache_block');
+    }
+    _drush_cache_clear_all(NULL, 'cache_page');
+    return;
+  }
+  return _drush_cache_get_object($bin)->clear($cid, $wildcard);
+}
+
+
