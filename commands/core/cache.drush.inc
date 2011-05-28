@@ -22,6 +22,7 @@ function cache_drush_command() {
     'aliases' => array('cg'),
   );
   $items['cache-clear'] = array(
+    'bootstrap' => DRUSH_BOOTSTRAP_MAX,
     'description' => 'Clear a specific cache, or all drupal caches.',
     'arguments' => array(
       'type' => 'The particular cache to clear. Omit this argument to choose from available caches.',
@@ -50,7 +51,8 @@ function cache_drush_command() {
  * Command callback for drush cache-clear.
  */
 function drush_cache_clear($type = NULL) {
-  switch (drush_drupal_major_version()) {
+  if ($drupal_root = drush_get_context('DRUSH_DRUPAL_ROOT')) {
+    switch (drush_drupal_major_version()) {
     case 5:
       // clear preprocessor cache
       drupal_clear_css_cache();
@@ -67,23 +69,26 @@ function drush_cache_clear($type = NULL) {
     case 7:
     default:
       $types = drush_cache_clear_types();
-      // Check if the provided type ($type) is a valid cache type.
-      if ($type && !key_exists($type, $types)) {
-        return drush_set_error(dt("'!type' cache is not a valid cache type", array('!type' => $type)));
-      }
+    }
+  }
 
-      if ($type) {
-        drush_op($types[$type]);
-        drush_log(dt("'!name' cache was cleared", array('!name' => $type)), 'success');
-      }
-      else {
-        $choice = drush_choice($types, 'Enter a number to choose which cache to clear.', '!key');
-        if ($choice !== FALSE) {
-          call_user_func($types[$choice]);
-          drush_log(dt("'!name' cache was cleared", array('!name' => $choice)), 'success');
-        }
-      }
-      break;
+  $types['drush'] = '_drush_cache_clear_all';
+
+  // Check if the provided type ($type) is a valid cache type.
+  if ($type && !key_exists($type, $types)) {
+    return drush_set_error(dt("'!type' cache is not a valid cache type", array('!type' => $type)));
+  }
+
+  if ($type) {
+    drush_op($types[$type]);
+    drush_log(dt("'!name' cache was cleared", array('!name' => $type)), 'success');
+  }
+  else {
+    $choice = drush_choice($types, 'Enter a number to choose which cache to clear.', '!key');
+    if ($choice !== FALSE) {
+      call_user_func($types[$choice]);
+      drush_log(dt("'!name' cache was cleared", array('!name' => $choice)), 'success');
+    }
   }
 }
 
