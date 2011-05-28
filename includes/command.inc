@@ -960,40 +960,51 @@ function _drush_find_commandfiles($phase, $phase_max = FALSE) {
   _drush_add_commandfiles($searchpath, $phase);
 }
 
-function _drush_add_commandfiles($searchpath, $phase = NULL) {
+function _drush_add_commandfiles($searchpath, $phase = NULL, $reset = FALSE) {
   static $evaluated = array();
   static $deferred = array();
 
   $cache =& drush_get_context('DRUSH_COMMAND_FILES', array());
 
   if (sizeof($searchpath)) {
+    if (!$reset) {
+      $cid = array('commandfiles');
+      // If we have a drupal root, create a site specific cache.
+      if ($drupal_root = drush_get_context('DRUSH_DRUPAL_ROOT', NULL)) {
+        $cid[] = md5($drupal_root);
+      }
+      $cid[] = $phase;
+      $cid = implode('-', $cid);
+      $command_cache = _drush_cache_get($cid);
+      if (isset($command_cache->data)) {
+        $cached_list = $command_cache->data;
+      }
+    }
+
     // Build a list of all of the modules to attempt to load.
     // Start with any modules deferred from a previous phase.
     $list = $deferred;
-
-  $cache_key = 'commandfiles-' . $phase;
-  $command_cache = _drush_cache_get($cache_key);
-  if (!empty($command_cache->data)) {
-    $list = $command_cache->data;
-  }
-  else {
-    // Scan for drush command files; add to list for consideration if found.
-    foreach (array_unique($searchpath) as $path) {
-      if (is_dir($path)) {
-        $files = drush_scan_directory($path, '/\.drush\.inc$/', array('.', '..', 'examples'));
-        foreach ($files as $filename => $info) {
-          $module = basename($filename, '.drush.inc');
-          // Only try to bootstrap modules that we have never seen before, or that we
-          // have tried to load but did not due to an unmet _drush_load() requirement.
-          if (!array_key_exists($module, $evaluated) && file_exists($filename)) {
-            $evaluated[$module] = TRUE;
-            $list[$module] = $filename;
+    if (isset($cached_list)) {
+      $list = array_merge($list, $cached_list);
+    }
+    else {
+      // Scan for drush command files; add to list for consideration if found.
+      foreach (array_unique($searchpath) as $path) {
+        if (is_dir($path)) {
+          $files = drush_scan_directory($path, '/\.drush\.inc$/', array('.', '..', 'examples'));
+          foreach ($files as $filename => $info) {
+            $module = basename($filename, '.drush.inc');
+            // Only try to bootstrap modules that we have never seen before, or that we
+            // have tried to load but did not due to an unmet _drush_load() requirement.
+            if (!array_key_exists($module, $evaluated) && file_exists($filename)) {
+              $evaluated[$module] = TRUE;
+              $list[$module] = $filename;
+            }
           }
         }
       }
+      _drush_cache_set($cid, $list);
     }
-    _drush_cache_set($cache_key, $list);
-  }
 
     // Check each file in the consideration list; if there is
     // a modulename_drush_load() function in modulename.drush.load.inc,
@@ -1009,8 +1020,16 @@ function _drush_add_commandfiles($searchpath, $phase = NULL) {
         }
       }
       if ($load_command) {
-        require_once realpath($filename);
-        unset($deferred[$module]);
+        // Only try to require if the file exists. If not, a file from the
+        // command file cache may not be available anymore, in which case
+        // we rebuild the cache for this phase.
+        if ($filepath = realpath($filename)) {
+          require_once $filepath;
+          unset($deferred[$module]);
+        }
+        elseif (!$reset) {
+          _drush_add_commandfiles($searchpath, $phase, TRUE);
+        }
       }
       else {
         unset($list[$module]);
