@@ -713,7 +713,7 @@ function drush_pm_enable() {
   // will allow these newly-enabled modules to participate
   // in the post_pm_enable hook.
   if (!empty($searchpath)) {
-    _drush_add_commandfiles($searchpath);
+    _drush_add_commandfiles($searchpath, NULL, $reset = TRUE);
   }
   if (!empty($problem_extensions)) {
     return drush_set_error('DRUSH_PM_ENABLE_EXTENSION_ISSUE', dt('There was a problem enabling !extension.', array('!extension' => implode(',', $problem_extensions))));
@@ -2266,6 +2266,9 @@ function drush_pm_download() {
     package_handler_post_download($request);
     drush_command_invoke_all('drush_pm_post_download', $request, $release);
     $version_control->post_download($request);
+
+    // Clear the command file cache.
+    _drush_cache_clear_all('commandfiles', NULL, TRUE);
 
     // Print release notes if --notes option is set.
     if (drush_get_option('notes') && !drush_get_context('DRUSH_PIPE')) {
