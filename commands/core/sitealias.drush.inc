@@ -39,6 +39,18 @@ function sitealias_drush_command() {
     ),
     'topics' => array('docs-aliases'),
   );
+  $items['site-connect'] = array(
+    'description' => 'A string to connect to a site alias via ssh.',
+    'arguments' => array(
+      'site-alias' => 'A remote site alias, or a list of site aliases',
+    ),
+    'aliases' => array('sc'),
+    'examples' => array(
+      '`drush site-connect @mysite`' => 'Open an interactive shell on @mysite\'s server.',
+    ),
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUSH,
+  );
+
   return $items;
 }
 
@@ -73,12 +85,47 @@ function _drush_sitealias_site_list() {
   return $site_list;
 }
 
+
 /**
- * Return the list of all site aliases and all local sites.
+ * Command callback for sitealias-connect.
  */
-function _drush_sitealias_all_list() {
-  drush_sitealias_load_all();
-  return array_merge(_drush_sitealias_alias_list(), _drush_sitealias_site_list());
+function drush_sitealias_site_connect($alias) {
+  $cmds = _drush_sitealias_connect($alias);
+  if (!empty($cmds)) {
+    drush_print(implode("\n", $cmds));
+  }
+  else {
+    drush_set_error(dt('Could not generate ssh command for @alias', array('@alias' => $alias)));
+  }
+}
+
+/**
+ * Generates ssh commands for sites aliases.
+ */
+function _drush_sitealias_connect($site_alias) {
+  $site_record = drush_sitealias_get_record($site_alias);
+  $sites = array();
+  if (isset($site_record['site-list'])) {
+    foreach ($site_record['site-list'] as $alias) {
+      $sites[] = drush_sitealias_get_record($alias);
+    }
+  }
+  else {
+    $sites[] = $site_record;
+  }
+
+  $cmds = array();
+  foreach ($sites as $site) {
+    if (!empty($site)) {
+      // We only accept remote aliases.
+      if (empty($site['remote-host'])) {
+        drush_set_error(dt('@alias is not a remote alias.', array('@alias' => $site['name'])));
+      }
+      // Build up the command.
+      $cmds[] = _drush_build_command(NULL, array(), $site);
+    }
+  }
+  return $cmds;
 }
 
 /**

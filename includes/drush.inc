@@ -938,6 +938,80 @@ function drush_remote_command() {
   return FALSE;
 }
 
+function drush_build_command($command, $args = array(), $site = array()) {
+  return implode(" ", _drush_build_command($command, $args = array(), $site = array()));
+}
+
+/**
+ * Generate a command to execute.
+ *
+ * @param site_record
+ *   An array containing information used to generate the command.
+ *   'remote-host'
+ *      Optional. A remote host to execute the drush command on.
+ *   'remote-user'
+ *      Optional. Defaults to the current user. If you specify this, you can choose which module to send.
+ *   'ssh-options'
+ *      Optional.  Defaults to "-o PasswordAuthentication=no"
+ *   'path-aliases'
+ *      Optional; contains paths to folders and executables useful to the command.
+ *      '%drush-script'
+ *        Optional. Defaults to the current drush.php file on the local machine, and
+ *        to simply 'drush' (the drush script in the current PATH) on remote servers.
+ *        You may also specify a different drush.php script explicitly.  You will need
+ *        to set this when calling drush on a remote server if 'drush' is not in the
+ *        PATH on that machine.
+ * @param command
+ *    A defined drush command such as 'cron', 'status' or any of the available ones such as 'drush pm'.
+ * @param args
+ *    Optional. An array containing options to pass to the remote script.
+ *    Array items with a numeric key are treated as optional arguments to the
+ *    command.  This parameter is a reference, as any options that have been
+ *    represented as either an option, or an argument will be removed.  This
+ *    allows you to pass the left over options as a JSON encoded string,
+ *    without duplicating data.
+ * @param backend_options
+ *    Optional. An array of options for the invocation.
+ *    @see drush_backend_invoke for documentation.
+ *
+ * @return
+ *   A text string representing a fully escaped command.
+ */
+function _drush_build_command($command, $args = array(), $site = array()) {
+  $site_record = is_string($site) ? drush_sitealias_get_record($site) : $site;
+  $site_record += array(
+    'remote-host' => NULL,
+    'remote-user' => NULL,
+    'ssh-options' => NULL,
+    'path-aliases' => array(),
+  );
+
+  $hostname = $site_record['remote-host'];
+  $username = $site_record['remote-user'];
+  $ssh_options = $site_record['ssh-options'];
+  $os = drush_os($site_record);
+
+  if (drush_is_local_host($hostname)) {
+    $hostname = null;
+  }
+
+  foreach ($args as &$arg) {
+    drush_escapeshellarg($arg, $os);
+  }
+
+  drush_print_r($site_record);
+  if (!is_null($hostname)) {
+    $username = (!is_null($username)) ? drush_escapeshellarg($username, "LOCAL") . "@" : '';
+    $ssh_options = (!is_null($ssh_options)) ? $ssh_options : drush_get_option('ssh-options', "-o PasswordAuthentication=no");
+    $cmd = array("ssh", $ssh_options, $username . drush_escapeshellarg($hostname, "LOCAL"), drush_escapeshellarg($command, "LOCAL"));
+  }
+  else {
+    $cmd = $command;
+  }
+
+  return $cmd;
+}
+
 /**
  * Used by functions that operate on lists of sites, moving
  * information from the source to the destination.  Currenlty
